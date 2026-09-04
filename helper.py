@@ -44,6 +44,7 @@ def numStreams(rho):
 
 def get_density(str_num):
     # returns the optimum stream density to get 
+    # a certain number of streams
 
     def fun(rho, str_num):
         return np.abs(numStreams(rho) - str_num)
