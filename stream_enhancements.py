@@ -29,7 +29,7 @@ SIGMA = 167.0                                  # km/s
 import matplotlib
 #from pyfonts import load_google_font
 
-font = {'family' : 'EB Garamond',
+font = {'family' : 'Garamond',
         'weight' : 'normal',
         'size'   : 22}
 #matplotlib.rcParams['font.serif'] = "Times New Roman"
@@ -49,11 +49,23 @@ plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+from scipy.spatial.transform import Rotation
 
+normal = np.array([V_C[1], -V_C[0], 0])
+
+def rotationn(t, x):
+    '''
+
+    '''
+    rot = Rotation.from_rotvec(t * normal / np.linalg.norm(normal))
+    r = rot.apply(x)
+    return r / np.linalg.norm(r)
 
 # ---------------------------------------------------------------- physics ---
 def earth_direction(theta):
     """Unit vector Sun->Earth, same convention as the notebook's v_inf()."""
+    return rotationn(theta, V_C)
+    
     return np.array([np.cos(theta), np.sin(theta), 0.0])
 
 
@@ -219,7 +231,7 @@ def plot_logrho_pdf(res, fname="logrho_pdf_bands.png"):
         col = _color(i, T)
         _band_std(ax, x, res["hist_new"][i].mean(axis=0), res["hist_new"][i].std(axis=0, ddof=1), col)
         ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
-        ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", lw=0.8, label="original", zorder=5)
+        ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", marker="+", lw=0.8, label="original", zorder=5)
         ax.set_yscale("log")
         ax.set_ylim(1e-6, 3 * h0.max())
         ax.set_xlim(b[0], b[-1] - 0.5)                         # original max + 1 decade
