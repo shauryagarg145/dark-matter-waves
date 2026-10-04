@@ -236,8 +236,8 @@ def plot_logrho_single(res, i=0, fname="plots/logrho_pdf_single.png"):
     """Slide 1: a single log-rho panel (default i=0, i.e. the first angle, phi_inf = 0)."""
     fig, ax = plt.subplots(figsize=(7.0, 5.2), constrained_layout=True)
     _draw_logrho(ax, res, i)
-    ax.set_xlabel(r"$\log_{10}\rho$")
-    ax.set_ylabel(r"$P(\log\rho)$")
+    ax.set_xlabel(r"$\log_{10}(\rho / \rho _{DM})$")
+    ax.set_ylabel(r"$P(\log_{10}(\rho / \rho _{DM}))$")
     ax.legend(loc="upper right")
     fig.suptitle("Stream density distribution,\nbefore/after solar focusing")
     fig.savefig(fname, dpi=400)
@@ -252,7 +252,7 @@ def plot_logrho_pdf(res, fname="plots/logrho_pdf_bands.png"):
     the original distribution is the thin black line on top.
     """
     T = len(res["thetas"])
-    fig, axs = _grid(T, r"$\log_{10}\rho$", r"$P(\log\rho)$")
+    fig, axs = _grid(T, r"$\log_{10}(\rho / \rho _{DM})$", r"$P(\log_{10}(\rho / \rho _{DM}))$")
     for i, ax in enumerate(axs):
         _draw_logrho(ax, res, i)
     axs[(3 if T > 4 else 2) - 1].legend(loc="upper right", fontsize=11)   # top-right panel
