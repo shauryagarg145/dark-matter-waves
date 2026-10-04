@@ -146,6 +146,7 @@ def run(n_streams=100_000, n_repeats=100, thetas=None, branch="both",
       hist_new[T, K, B] : P(log10 rho_new) per repeat (density=True, as in your cell 5)
       hist_old[B]       : P(log10 rho) of the original densities
       bins_rho[B+1]     : shared bin edges for the two above
+      lrho_max          : log10 of the largest original stream density (where hist_old ends)
       hist[T, K, nb]    : P(log10 delta) per repeat, on `bins`
       mean_A[T, K]      : mean enhancement per repeat
       A_keep[T, K, M]   : A for M log-spaced streams, stream numbers idx + 1
@@ -175,7 +176,7 @@ def run(n_streams=100_000, n_repeats=100, thetas=None, branch="both",
             mean_A[i, k] = A.mean()
             A_keep[i, k] = A[idx]
     hist = hist / (n_streams * np.diff(bins))                  # PDF in log10(delta)
-    return dict(thetas=thetas, branch=branch, bins_rho=bins_rho, hist_new=hist_new,
+    return dict(thetas=thetas, branch=branch, bins_rho=bins_rho, lrho_max=lrho.max(), hist_new=hist_new,
                 hist_old=hist_old, bins=bins, hist=hist, mean_A=mean_A, A_keep=A_keep, idx=idx)
 
 
@@ -215,34 +216,52 @@ def _band_std(ax, x, mean, std, color, floor=1e-9):
     ax.plot(x, np.where(mean > 0, mean, np.nan), color=color, lw=1.6)
 
 
-def plot_logrho_pdf(res, fname="logrho_pdf_bands.png"):
-    """
-    Your cell-5 plot, repeated over velocity resamples and Earth angles.
-    P(log10 rho) of all streams from all resamples pooled (= mean of the per-resample
-    histograms) with +-1 / +-2 sigma bands (std of the per-resample histograms);
-    the original distribution is the thin black line on top.
-    """
+def _draw_logrho(ax, res, i):
+    """One log-rho panel: mean of all resamples with +-1/+-2 sigma bands, original on top."""
     th, b = res["thetas"], res["bins_rho"]
-    T, K = len(th), res["hist_new"].shape[1]
     x = 0.5 * (b[1:] + b[:-1])
     h0 = res["hist_old"]
-    fig, axs = _grid(T, r"$\log_{10}\rho$", r"$P(\log\rho)$")
-    for i, ax in enumerate(axs):
-        col = _color(i, T)
-        _band_std(ax, x, res["hist_new"][i].mean(axis=0), res["hist_new"][i].std(axis=0, ddof=1), col)
-        ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
-        ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", marker="+", lw=0.8, label="original", zorder=5)
-        ax.set_yscale("log")
-        ax.set_ylim(1e-6, 3 * h0.max())
-        ax.set_xlim(b[0], b[-1] - 0.5)                         # original max + 1 decade
-        ax.set_title(f"$\\theta$ = {np.degrees(th[i]):.0f}°")
-    axs[0].legend(loc="lower left")
-    fig.suptitle(f"Stream density distribution, before/after solar focusing")
+    col = _color(i, len(th))
+    _band_std(ax, x, res["hist_new"][i].mean(axis=0), res["hist_new"][i].std(axis=0, ddof=1), col)
+    ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
+    ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", marker="+", lw=0.8, label="original", zorder=5)
+    ax.axvline(res["lrho_max"], color="k", ls=":", lw=1.2, label="end of original distribution", zorder=4)
+    ax.set_yscale("log")
+    ax.set_ylim(1e-6, 3 * h0.max())
+    ax.set_xlim(b[0], b[-1] - 0.5)                             # original max + 1 decade
+    ax.set_title(f"$\\varphi_\\infty$ = {np.degrees(th[i]):.0f}°")
+
+
+def plot_logrho_single(res, i=0, fname="plots/logrho_pdf_single.png"):
+    """Slide 1: a single log-rho panel (default i=0, i.e. the first angle, phi_inf = 0)."""
+    fig, ax = plt.subplots(figsize=(7.0, 5.2), constrained_layout=True)
+    _draw_logrho(ax, res, i)
+    ax.set_xlabel(r"$\log_{10}\rho$")
+    ax.set_ylabel(r"$P(\log\rho)$")
+    ax.legend(loc="upper right")
+    fig.suptitle("Stream density distribution,\nbefore/after solar focusing")
     fig.savefig(fname, dpi=400)
     return fig
 
 
-def plot_delta_pdf(res, fname="delta_pdf_bands.png"):
+def plot_logrho_pdf(res, fname="plots/logrho_pdf_bands.png"):
+    """
+    Slide 2: your cell-5 plot for every Earth angle.
+    P(log10 rho) of all streams from all resamples pooled (= mean of the per-resample
+    histograms) with +-1 / +-2 sigma bands (std of the per-resample histograms);
+    the original distribution is the thin black line on top.
+    """
+    T = len(res["thetas"])
+    fig, axs = _grid(T, r"$\log_{10}\rho$", r"$P(\log\rho)$")
+    for i, ax in enumerate(axs):
+        _draw_logrho(ax, res, i)
+    axs[(3 if T > 4 else 2) - 1].legend(loc="upper right", fontsize=11)   # top-right panel
+    fig.suptitle("Stream density distribution, before/after solar focusing")
+    fig.savefig(fname, dpi=400)
+    return fig
+
+
+def plot_delta_pdf(res, fname="plots/delta_pdf_bands.png"):
     """P(log10 delta) per Earth angle; band = spread over the repeated velocity draws."""
     th, bins = res["thetas"], res["bins"]
     T, K = len(th), res["hist"].shape[1]
@@ -251,7 +270,7 @@ def plot_delta_pdf(res, fname="delta_pdf_bands.png"):
     for i, ax in enumerate(axs):
         _band(ax, x, res["hist"][i] + 1e-12, _color(i, T))
         lo, md, hi = np.percentile(res["mean_A"][i], [16, 50, 84])
-        ax.set_title(f"$\\theta$ = {np.degrees(th[i]):.0f}°  ({th[i] / 2 / np.pi:.2f} yr)")
+        ax.set_title(f"$\\varphi_\\infty$ = {np.degrees(th[i]):.0f}°  ({th[i] / 2 / np.pi:.2f} yr)")
         ax.text(0.04, 0.05, f"$\\langle A\\rangle$ = {md:.4f}  [{lo:.4f}, {hi:.4f}]",
                 transform=ax.transAxes, fontsize=8.5)
         ax.set_yscale("log")
@@ -263,7 +282,7 @@ def plot_delta_pdf(res, fname="delta_pdf_bands.png"):
     return fig
 
 
-def plot_densities(res, fname="densities_vs_stream.png"):
+def plot_densities(res, fname="plots/densities_vs_stream.png"):
     """
     Detectable stream densities rho_n * A_n vs stream number n.
     Top: original density (black) and enhanced density (median, 68% / 95% bands over
@@ -286,7 +305,7 @@ def plot_densities(res, fname="densities_vs_stream.png"):
         bot.set_xscale("log")
         bot.set_yscale("log")
         bot.set_ylim(1e-6, 1e2)
-        top.set_title(f"$\\theta$ = {np.degrees(th[i]):.0f}°")
+        top.set_title(f"$\\varphi_\\infty$ = {np.degrees(th[i]):.0f}°")
         top.set_ylabel(r"stream density $\rho$")
         bot.set_ylabel(r"$\rho_{\rm new}/\rho-1$")
         bot.set_xlabel("stream number")
@@ -316,12 +335,14 @@ def _selftest():
 
 
 if __name__ == "__main__":
-    import time
+    import os, time
+    os.makedirs("plots", exist_ok=True)
     _selftest()
     t0 = time.time()
     res = run(n_streams=10000, n_repeats=10000, branch="both")
     print(f"run time: {time.time() - t0:.1f} s")
-    plot_logrho_pdf(res)
+    plot_logrho_single(res)                    # slide 1: phi_inf = 0 only
+    plot_logrho_pdf(res)                       # slide 2: all angles
     plot_densities(res)
     plot_delta_pdf(res)                        # optional extra figures
     plt.show()
