@@ -223,6 +223,11 @@ def _draw_logrho(ax, res, i):
     h0 = res["hist_old"]
     col = _color(i, len(th))
     _band_std(ax, x, res["hist_new"][i].mean(axis=0), res["hist_new"][i].std(axis=0, ddof=1), col)
+    
+    mask = res["hist_new"][i].mean(axis=0) <= 1e-4
+    ma = x[mask] * res["hist_new"][i].mean(axis=0)[mask]  #np.trapezoid(x[mask], res["hist_new"][i].mean(axis=0)[mask])
+    print(np.sum(ma) / np.sum(res["hist_new"][i].mean(axis=0)[mask]))
+    
     ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
     ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", marker="+", lw=0.8, label="original", zorder=5)
     ax.axvline(res["lrho_max"], color="k", ls=":", lw=1.2, label="end of original distribution", zorder=4)
@@ -339,7 +344,7 @@ if __name__ == "__main__":
     os.makedirs("plots", exist_ok=True)
     _selftest()
     t0 = time.time()
-    res = run(n_streams=10000, n_repeats=10000, branch="both")
+    res = run(n_streams=10000, n_repeats=100000, branch="both")
     print(f"run time: {time.time() - t0:.1f} s")
     plot_logrho_single(res)                    # slide 1: phi_inf = 0 only
     plot_logrho_pdf(res)                       # slide 2: all angles
