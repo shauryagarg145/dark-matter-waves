@@ -13,10 +13,10 @@ clear; close all; clc;
 %% ------------------------------ settings ------------------------------------
 orbit_file   = 'earth_orbit.mat';
 
-window_hours = 24;          % integrate the lineshape over this many hours (6..24)
+window_hours = 6;          % integrate the lineshape over this many hours (6..24)
 first_day    = 0;           % days since t0 (t0 = 2013-06-22 00:00 UTC, as in the notebook)
 last_day     = 365;
-frame_step_d = 0.25;           % one frame every 3 days -> ~122 frames
+frame_step_d = 1;           % one frame every 3 days -> ~122 frames
 
 stream_speed = 220;         % km/s, notebook 'spd'
 nT           = 400;         % time samples inside each window   (notebook: 400)
@@ -81,24 +81,33 @@ vc   = 0.5*(edges(1:end-1) + edges(2:end));
 
 %% ------------------------------ compute frames ------------------------------
 if ~recompute && exist(cache_file, 'file')
-    load(cache_file, 'V', 'days');
+    load(cache_file, 'V', 'enh', 'days');
     nF = numel(days);
 else
     V   = zeros(nb, nF);      % lineshape per frame
+    enh = zeros(1, nF);       % mean density-enhancement factor (w1+w2) in the window
     opts = struct('u', stream_speed, 'nT', nT, 'nAz', nAz);
     tic
     for k = 1:nF               % <-- change to  parfor k = 1:nF  if you have the Parallel Toolbox
-        V(:,k) = lineshape_window(orb, days(k), window_hours, edges, opts);
+        [V(:,k), info] = lineshape_window(orb, days(k), window_hours, edges, opts);
+        enh(k) = mean(info.w1 + info.w2);
         fprintf('frame %3d/%3d  day %6.1f   (%.1f s elapsed)\n', k, nF, days(k), toc);
     end
-    save(cache_file, 'V', 'days', 'edges', 'window_hours', 'stream_speed', '-v7');
+    save(cache_file, 'V', 'enh', 'days', 'edges', 'window_hours', 'stream_speed', '-v7');
 end
 
-% The literal relative density: int f(v) dv over the window, in the SAME
-% fixed units as V itself (no renormalisation), so this is directly "how
-% much more (or less) dark matter is passing through, right now, compared
-% to a quiet day" -- exactly the top panel's area, tracked across the year.
-tot = sum(V, 1) * de;
+% NOTE on "relative density": this is mean(w1+w2), NOT sum(V)*de (the area
+% under the top panel). w1 and w2 are the two branches' 1/|Jacobian| values
+% -- the actual local phase-space density enhancement -- and by construction
+% sit at ~1.00 on a quiet day, rising only when gravitational focusing is
+% really happening. sum(V)*de instead only counts flux landing inside the
+% displayed speed WINDOW (edges), which is narrower than the full speed
+% spread; how much of that spread falls inside a fixed window shifts with
+% Earth's ~30 km/s orbital Doppler shift over the year -- a real but
+% DIFFERENT effect (it's the classic annual-modulation-in-a-detector-
+% threshold signal) that has nothing to do with focusing, and it was why
+% that version of this panel wandered down toward 0 instead of sitting at a
+% stable baseline.
 
 switch yscale
     case 'unit_area'
@@ -193,17 +202,18 @@ for k = 1:nF
     grid on;
 
     % ---- (bottom-left) relative density vs time ----
-    % This is int V(v) dv for that frame's window -- literally the area under
-    % the top panel -- so it is a direct "how much more/less dark matter is
-    % passing through right now compared to a quiet day" readout, not a proxy.
+    % mean(w1+w2): the true local density-enhancement factor, independent of
+    % the display speed-window above. Baseline = 1 on a quiet day; see the
+    % NOTE above the frame-computation loop for why this -- and not the area
+    % under the top panel -- is the right thing to call "relative density".
     subplot(2, 2, 3);
-    semilogy(days, tot, '-', 'Color', [0.6 0.6 0.6]);  hold on;
-    semilogy(days(k), tot(k), 'o', 'MarkerFaceColor', [0.85 0.2 0.1], 'MarkerEdgeColor', 'none', ...
+    semilogy(days, enh, '-', 'Color', [0.6 0.6 0.6]);  hold on;
+    semilogy(days(k), enh(k), 'o', 'MarkerFaceColor', [0.85 0.2 0.1], 'MarkerEdgeColor', 'none', ...
              'MarkerSize', 9);
     xlim([days(1) days(end)+1]);
     if use_log_y
-        ylim([0.9*min(tot) 1.2*max(tot)]);  % same philosophy as the top panel: show it all
-        title('relative density (= area under top panel)');
+        ylim([0.9 1.2*max(enh)]);  % baseline sits at ~1; show everything above it
+        title('relative density (unperturbed = 1)');
     else
         ylim(enh_ylim);
         title('relative density (off-scale at t_0)');
