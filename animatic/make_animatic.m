@@ -16,7 +16,7 @@ orbit_file   = 'earth_orbit.mat';
 window_hours = 6;          % integrate the lineshape over this many hours (6..24)
 first_day    = 0;           % days since t0 (t0 = 2013-06-22 00:00 UTC, as in the notebook)
 last_day     = 365;
-frame_step_d = 1;           % one frame every 3 days -> ~122 frames
+frame_step_d = 0.25;           % one frame every 3 days -> ~122 frames
 
 stream_speed = 220;         % km/s, notebook 'spd'
 nT           = 400;         % time samples inside each window   (notebook: 400)
