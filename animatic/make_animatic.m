@@ -26,31 +26,40 @@ edges        = linspace(210, 240, 701);   % speed bins [km/s], FIXED across all 
 
 % Normalisation: lineshape_window already returns values on a CONSISTENT
 % absolute scale from one frame to the next (same u, nT, nAz, edges every
-% call), so the raw values are directly comparable. A quiet frame (far from
-% the stream-crossing direction) has an integrated area of ~0.2 regardless
-% of which day it is; the crossing itself is a real, near-singular caustic
-% (an idealised single-speed stream lined up exactly with Earth's t0
-% position formally diverges there) that can reach 10^3-10^4x that.
+% call), so the raw values are directly comparable -- no per-frame rescaling
+% is applied (that would hide the enhancement; 'unit_area' mode below
+% brings the old behaviour back if you ever want it).
 %
-%   yscale = 'fixed'      (default) : NO per-frame rescaling at all -- every
-%                                      frame plotted in the same units, so
-%                                      the focusing enhancement shows up as
-%                                      a real peak/plateau rising out of a
-%                                      flat baseline, exactly as it should.
-%   yscale = 'unit_area'            : legacy behaviour -- divide every frame
-%                                      by its own integral. Useful only if
-%                                      you want to compare SHAPES and
-%                                      deliberately hide the enhancement.
+%   yscale = 'fixed'      (default) : raw values, same units every frame.
+%   yscale = 'unit_area'            : legacy -- divide every frame by its
+%                                      own integral. Hides the enhancement.
 yscale       = 'fixed';
-ymax         = [];          % [] = automatic: set from the visible secondary
-                            %   bump (see ymax_percentile/ymax_margin below),
-                            %   so the exact-crossing frames spike off the
-                            %   top of the panel -- deliberately, see below.
-ymax_percentile = 99;       % percentile of per-frame peak heights used to
-                            %   set ymax automatically (ignored if ymax set)
-ymax_margin  = 1.4;         % headroom multiplier on top of that percentile
-enh_ylim     = [0.95 5];    % y-range of the focusing strip; the caustic at t0 (theta -> 0)
-                            %   diverges, exactly as in the notebook, so it goes off-scale
+
+% The dynamic range is enormous: a quiet day sits around 1e-2 to 1e-1, the
+% broad antipodal bump (theta=180, ~day 183 for this stream direction)
+% rises to order 1, and the exact crossing (theta=0, day 0 / day 365) is a
+% real caustic that reaches ~1e2-1e3 for these settings -- it would climb
+% further if window_hours were shrunk further (it is a genuine divergence,
+% only numerically regularised by the finite window/time-sampling). A
+% single linear y-axis can't show the quiet baseline and the crossing at
+% once, so by default the axis is logarithmic: this shows the finite
+% antipodal bump AND the much taller crossing on the same plot, with
+% nothing clipped off.
+use_log_y    = true;        % false = old linear axis with percentile-based clipping
+
+% --- log-axis settings (used when use_log_y = true) ---
+yfloor_pct   = 5;           % floor = this percentile of the NONZERO values in each frame
+                            %   (the "quiet shoulder" level, not the literal minimum, which
+                            %   is set by a single near-empty edge bin and isn't informative)
+ymax_log     = [];          % [] = automatic: global max over the whole year x margin --
+                            %   no clipping needed, log scale shows the true peak directly
+ymax_log_margin = 1.3;
+
+% --- linear-axis settings (used when use_log_y = false) ---
+ymax         = [];          % [] = automatic (percentile-based, WITH clipping+annotation)
+ymax_percentile = 99;
+ymax_margin  = 1.4;
+enh_ylim     = [0.95 5];    % y-range of the (linear) focusing strip in that mode
 
 video_name   = 'lineshape_annual';   % -> lineshape_annual.mp4
 fps          = 20;
@@ -72,20 +81,24 @@ vc   = 0.5*(edges(1:end-1) + edges(2:end));
 
 %% ------------------------------ compute frames ------------------------------
 if ~recompute && exist(cache_file, 'file')
-    load(cache_file, 'V', 'enh', 'days');
+    load(cache_file, 'V', 'days');
     nF = numel(days);
 else
     V   = zeros(nb, nF);      % lineshape per frame
-    enh = zeros(1, nF);       % mean focusing weight (w1+w2) in the window
     opts = struct('u', stream_speed, 'nT', nT, 'nAz', nAz);
     tic
     for k = 1:nF               % <-- change to  parfor k = 1:nF  if you have the Parallel Toolbox
-        [V(:,k), info] = lineshape_window(orb, days(k), window_hours, edges, opts);
-        enh(k) = mean(info.w1 + info.w2);
+        V(:,k) = lineshape_window(orb, days(k), window_hours, edges, opts);
         fprintf('frame %3d/%3d  day %6.1f   (%.1f s elapsed)\n', k, nF, days(k), toc);
     end
-    save(cache_file, 'V', 'enh', 'days', 'edges', 'window_hours', 'stream_speed', '-v7');
+    save(cache_file, 'V', 'days', 'edges', 'window_hours', 'stream_speed', '-v7');
 end
+
+% The literal relative density: int f(v) dv over the window, in the SAME
+% fixed units as V itself (no renormalisation), so this is directly "how
+% much more (or less) dark matter is passing through, right now, compared
+% to a quiet day" -- exactly the top panel's area, tracked across the year.
+tot = sum(V, 1) * de;
 
 switch yscale
     case 'unit_area'
@@ -97,12 +110,36 @@ switch yscale
 end
 
 peakk = max(Vp, [], 1);                       % per-frame peak height
-if isempty(ymax)
-    ymax = ymax_margin * percentile_nostat(peakk, ymax_percentile);
+
+if use_log_y
+    if isempty(ymax_log)
+        ymax_log = ymax_log_margin * max(Vp(:));
+    end
+    % Per-frame floor: the level of the typical/quiet part of THIS frame's
+    % distribution, not its literal minimum. A global floor would either
+    % sit far below every quiet frame (if set from a near-singular frame's
+    % tiny edge-bin values) or clip the bulk of a quiet frame (if set too
+    % high), so this is computed per frame from that frame's own nonzero
+    % values, then floored again by the smallest such value across the
+    % year so the axis limit itself stays fixed across frames.
+    yfloor_frame = nan(1, nF);
+    for k = 1:nF
+        nz = Vp(Vp(:,k) > 0, k);
+        if isempty(nz), nz = ymax_log; end
+        yfloor_frame(k) = percentile_nostat(nz, yfloor_pct);
+    end
+    yfloor = min(yfloor_frame);
+    clipped = false(1, nF);                    % nothing is clipped on a log axis
+    fprintf('log y-axis: [%.3g, %.3g]  (global max x%.2g; floor = %.0f%%ile of nonzero values)\n', ...
+            yfloor, ymax_log, ymax_log_margin, yfloor_pct);
+else
+    if isempty(ymax)
+        ymax = ymax_margin * percentile_nostat(peakk, ymax_percentile);
+    end
+    clipped = peakk > ymax;                     % frames whose true peak is off-scale
+    fprintf('ymax = %.4g  (%.0f%%ile of per-frame peaks x%.2g);  %d/%d frames clipped: day(s) %s\n', ...
+            ymax, ymax_percentile, ymax_margin, sum(clipped), nF, mat2str(days(clipped)));
 end
-clipped = peakk > ymax;                       % frames whose true peak is off-scale
-fprintf('ymax = %.4g  (%.0f%%ile of per-frame peaks x%.2g);  %d/%d frames clipped: day(s) %s\n', ...
-        ymax, ymax_percentile, ymax_margin, sum(clipped), nF, mat2str(days(clipped)));
 
 %% ------------------------------ render --------------------------------------
 fig = figure('Color', 'w', 'Position', [50 50 1280 720]);
@@ -131,26 +168,47 @@ for k = 1:nF
 
     % ---- (top) lineshape ----
     subplot(2, 2, [1 2]);
-    area(vc, Vp(:,k), 'FaceColor', [0.27 0.51 0.71], 'EdgeColor', [0.1 0.25 0.45]);
-    xlim([edges(1) edges(end)]);  ylim([0 ymax]);
+    if use_log_y
+        % area() needs a finite baseline -- 0 is -Inf in log space -- so the
+        % curve (and the fill) are clamped to the floor; this just makes
+        % empty/near-empty bins sit visibly at the bottom of the panel
+        % instead of breaking the plot.
+        yc = max(Vp(:,k), yfloor);
+        area(vc, yc, 'basevalue', yfloor, 'FaceColor', [0.27 0.51 0.71], 'EdgeColor', [0.1 0.25 0.45]);
+        set(gca, 'YScale', 'log');
+        ylim([yfloor ymax_log]);
+    else
+        area(vc, Vp(:,k), 'FaceColor', [0.27 0.51 0.71], 'EdgeColor', [0.1 0.25 0.45]);
+        ylim([0 ymax]);
+        if clipped(k)
+            text(edges(end), 0.97*ymax, sprintf('peak off-scale: %.3g  ', peakk(k)), ...
+                 'Color', [0.85 0.2 0.1], 'FontWeight', 'bold', 'HorizontalAlignment', 'right', ...
+                 'VerticalAlignment', 'top');
+        end
+    end
+    xlim([edges(1) edges(end)]);
     xlabel('speed in lab frame  [km/s]');  ylabel(ylab);
     title(sprintf('%s   |   integrating %g h', datestr(dnum, 'dd mmm yyyy'), window_hours), ...
           'FontSize', 14);
     grid on;
-    if clipped(k)
-        text(edges(end), 0.97*ymax, sprintf('peak off-scale: %.3g  ', peakk(k)), ...
-             'Color', [0.85 0.2 0.1], 'FontWeight', 'bold', 'HorizontalAlignment', 'right', ...
-             'VerticalAlignment', 'top');
-    end
 
-    % ---- (bottom-left) focusing enhancement vs time ----
+    % ---- (bottom-left) relative density vs time ----
+    % This is int V(v) dv for that frame's window -- literally the area under
+    % the top panel -- so it is a direct "how much more/less dark matter is
+    % passing through right now compared to a quiet day" readout, not a proxy.
     subplot(2, 2, 3);
-    semilogy(days, enh, '-', 'Color', [0.6 0.6 0.6]);  hold on;
-    semilogy(days(k), enh(k), 'o', 'MarkerFaceColor', [0.85 0.2 0.1], 'MarkerEdgeColor', 'none', ...
+    semilogy(days, tot, '-', 'Color', [0.6 0.6 0.6]);  hold on;
+    semilogy(days(k), tot(k), 'o', 'MarkerFaceColor', [0.85 0.2 0.1], 'MarkerEdgeColor', 'none', ...
              'MarkerSize', 9);
-    xlim([days(1) days(end)+1]);  ylim(enh_ylim);
-    xlabel('days since t_0');  ylabel('mean relative density');
-    title('gravitational-focusing enhancement (off-scale at t_0)');  grid on;
+    xlim([days(1) days(end)+1]);
+    if use_log_y
+        ylim([0.9*min(tot) 1.2*max(tot)]);  % same philosophy as the top panel: show it all
+        title('relative density (= area under top panel)');
+    else
+        ylim(enh_ylim);
+        title('relative density (off-scale at t_0)');
+    end
+    xlabel('days since t_0');  ylabel('relative density');  grid on;
 
     % ---- (bottom-right) mini-map of the orbit ----
     subplot(2, 2, 4);
