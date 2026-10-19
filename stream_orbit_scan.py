@@ -112,7 +112,7 @@ def load_orbit(path, step_days=1.0, use="lab"):
     return _make_orbit(np.asarray(jd)[s], np.asarray(r)[s], np.asarray(v)[s], f"{os.path.basename(path)} ({use})")
 
 
-def orbit_from_astropy(t0="2013-06-22 00:00:00", days=366.0, step_days=1.0):
+def orbit_from_astropy(t0="2013-03-05 00:00:00", days=366.0, step_days=1.0):
     """
     Fallback if you don't want to go through vel_conversions: Earth-centre position relative to
     the Sun from astropy's built-in ephemeris, rotated into ecliptic J2000.
@@ -150,34 +150,44 @@ def enhancement_branches(w, rhat, phi):
 
 
 # ------------------------------------------------------------ Monte Carlo ---
-def scan(orbit, date_idx, w_mean, n_streams=100_000, n_repeats=1000, sigma=SIGMA,
-         branch="both", do_hist=True, n_bins_rho=40, seed=0, verbose=True,
-         factors=(1.1, 1.5, 2.0, 5.0)):
+def _cum_hist(log10_vals, edges):
+    """
+    N(>= left bin edge): ordinary histogram of log10(rho) with uniform bin width, then a reverse
+    cumulative sum.  Values beyond the last edge are put in the last bin so no stream is lost.
+    """
+    counts = np.histogram(np.clip(log10_vals, edges[0], edges[-1]), edges)[0]
+    return counts[::-1].cumsum()[::-1]
+
+
+def scan(orbit, date_idx, w_mean, n_streams=10_000, n_repeats=100, sigma=SIGMA,
+         branch="both", do_cum=True, bin_width=0.05, seed=0, verbose=True,
+         factors=(1.05, 1.25, 1.5, 2.0, 4.0)):
     """
     For every repeat draw fresh stream velocities, then evaluate the enhancement at each orbit
     sample in `date_idx` (same draws for all dates -> differences between dates are purely
-    orbital).  Returns a dict; T = len(date_idx), K = n_repeats:
+    orbital).  Returns a dict; T = len(date_idx), K = n_repeats, G = number of bins:
 
-      hist_old[B], bins_rho[B+1], lrho_max   original log10(rho) PDF and its end
-      hist_new[T,K,B]                         PDF of log10(rho*A) per repeat (if do_hist)
-      A_rho[T,K]      sum(rho A)/sum(rho): density-weighted enhancement of the stream population
-      A_mean[T,K]     unweighted mean A (heavy tailed -> noisy; diagnostic only)
-      rho_max_loc[T,K] densest stream's LOCAL density  max_n rho_n A_n   [units of rho_DM]
-      n_star[T,K]     stream number (1 = densest) that attains it
-      n_exceed[T,K,F] how many streams end up denser than  f * rho_1  for each f in `factors`
-                      (rho_1 = original densest stream).  NB: A >= 1 always, so f = 1 is trivially
-                      satisfied by stream 1 itself - hence factors > 1.
+      lgrid[G]          left edges of uniform bins (width `bin_width` dex) in log10(rho/rho_DM)
+      cum_old[G]        original N(>rho): streams (of the N_str) with log10 rho >= left edge
+      cum_new[T,K,G]    the same after focusing, rho -> rho*A, per repeat (if do_cum)
+      A_rho[T,K]        sum(rho A)/sum(rho): density-weighted enhancement of the stream population
+      A_mean[T,K]       unweighted mean A (heavy tailed -> noisy; diagnostic only)
+      rho_max_loc[T,K]  densest stream's LOCAL density  max_n rho_n A_n   [units of rho_DM]
+      n_star[T,K]       stream number (1 = densest) that attains it
+      n_exceed[T,K,F]   number of streams with local density > f * rho_1 for each f in `factors`
+                        (rho_1 = original densest).  NB: A >= 1 always, so f = 1 is trivially
+                        satisfied by stream 1 itself - hence factors > 1.
     """
     rng = np.random.default_rng(seed)
     date_idx = np.asarray(date_idx, int)
     T, K, N = len(date_idx), n_repeats, n_streams
     rho = stream_density(np.arange(1, N + 1))
     lrho = np.log10(rho)
-    bins_rho = np.linspace(lrho.min() - 1e-9, lrho.max() + 1.5, n_bins_rho + 1)
-    dx = np.diff(bins_rho)
-    hist_old = np.histogram(lrho, bins_rho)[0] / (N * dx)
+    edges = np.arange(lrho.min(), lrho.max() + 1.5 + bin_width, bin_width)
+    lgrid = edges[:-1]
+    cum_old = _cum_hist(lrho, edges)
 
-    hist_new = np.zeros((T, K, n_bins_rho)) if do_hist else None
+    cum_new = np.zeros((T, K, len(lgrid)), dtype=np.int32) if do_cum else None
     A_rho, A_mean = np.zeros((T, K)), np.zeros((T, K))
     rho_max_loc, n_star = np.zeros((T, K)), np.zeros((T, K), int)
     factors = np.asarray(factors, float)
@@ -191,9 +201,8 @@ def scan(orbit, date_idx, w_mean, n_streams=100_000, n_repeats=1000, sigma=SIGMA
             a_d, a_s = enhancement_branches(w, rhat[j], phi[j])
             A = a_d + a_s if branch == "both" else a_d
             rl = rho * A
-            if do_hist:
-                # normalise by ALL streams (those boosted past the last bin still count)
-                hist_new[j, k] = np.histogram(np.log10(rl), bins_rho)[0] / (N * dx)
+            if do_cum:
+                cum_new[j, k] = _cum_hist(np.log10(rl), edges)
             A_rho[j, k] = rl.sum() / rho.sum()
             A_mean[j, k] = A.mean()
             im = int(rl.argmax())
@@ -202,8 +211,8 @@ def scan(orbit, date_idx, w_mean, n_streams=100_000, n_repeats=1000, sigma=SIGMA
         if verbose and (k + 1) % max(1, K // 10) == 0:
             print(f"  repeat {k + 1}/{K}   ({time.time() - t0:.1f} s)", flush=True)
     return dict(date_idx=date_idx, n_streams=N, n_repeats=K, branch=branch, w_mean=np.asarray(w_mean),
-                sigma=sigma, rho1=rho[0], lrho_max=lrho.max(), bins_rho=bins_rho, hist_old=hist_old,
-                hist_new=hist_new, A_rho=A_rho, A_mean=A_mean, rho_max_loc=rho_max_loc,
+                sigma=sigma, rho1=rho[0], lrho_max=lrho.max(), lgrid=lgrid, cum_old=cum_old,
+                cum_new=cum_new, A_rho=A_rho, A_mean=A_mean, rho_max_loc=rho_max_loc,
                 n_star=n_star, n_exceed=n_exceed, factors=factors)
 
 
@@ -214,7 +223,7 @@ def _fidx(res, factor):
     return int(i[0])
 
 
-def peak_report(res, orbit, factor=2.0):
+def peak_report(res, orbit, factor=1.25):
     """Print when each summary statistic peaks (median over repeats)."""
     d = res["date_idx"]
     p_exc = (res["n_exceed"][:, :, _fidx(res, factor)] >= 1).mean(1)
@@ -359,8 +368,14 @@ def plot_wind_geometry(orbit, w_mean, sigma=SIGMA, fname="plots/wind_geometry.pn
     return fig
 
 
-def plot_logrho_epochs(res, orbit, fname="plots/logrho_pdf_epochs.png", dpi=300, factor=2.0):
-    """Six-panel (or J-panel) version of your log-rho figure, one panel per Earth position/date."""
+def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=300, zoom=1.5):
+    """
+    One panel per date: cumulative number of streams denser than rho, N(>rho), before (black) and
+    after (coloured: mean, +-1 sigma, +-2 sigma over velocity draws) solar focusing.  Where N < 1 the
+    curve is (approximately) the probability that a stream denser than rho exists; the exact
+    P(>=1) at every threshold is np.mean(res['cum_new'][j] >= 1, axis=0).
+    zoom: show only the last `zoom` decades below the original densest stream (None = full range).
+    """
     J = len(res["date_idx"])
     ncol = 3 if J > 4 else 2
     nrow = int(np.ceil(J / ncol))
@@ -372,28 +387,25 @@ def plot_logrho_epochs(res, orbit, fname="plots/logrho_pdf_epochs.png", dpi=300,
     for ax in axs[-1]:
         ax.set_xlabel(r"$\log_{10}(\rho / \rho_{DM})$")
     for ax in axs[:, 0]:
-        ax.set_ylabel(r"$P(\log_{10}(\rho / \rho_{DM}))$")
-    b = res["bins_rho"]
-    x = 0.5 * (b[1:] + b[:-1])
-    h0 = res["hist_old"]
+        ax.set_ylabel(r"$N(>\rho)$")
+    x = res["lgrid"]
+    c0 = res["cum_old"].astype(float)
+    K = res["n_repeats"]
     flat = axs.ravel()[:J]
     for j, ax in enumerate(flat):
         col = _c(j, J)
-        h = res["hist_new"][j]
-        _band_std(ax, x, h.mean(0), h.std(0, ddof=1) if h.shape[0] > 1 else 0 * x, col)
+        c = res["cum_new"][j].astype(float)
+        _band_std(ax, x, c.mean(0), c.std(0, ddof=1) if K > 1 else 0 * x, col, floor=1e-12)
         ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
-        ax.plot(x, np.where(h0 > 0, h0, np.nan), "k", marker="+", lw=0.8, label="original", zorder=5)
+        ax.plot(x, np.where(c0 > 0, c0, np.nan), "k", lw=1.2, label="original", zorder=5)
         ax.axvline(res["lrho_max"], color="k", ls=":", lw=1.2, label="end of original distribution", zorder=4)
-        p = (res["n_exceed"][j][:, _fidx(res, factor)] >= 1).mean()
-        ax.text(0.04, 0.05, rf"P($\geq$1 stream $>{factor:g}\,\rho_1$) = {p:.2f}"
-                + "\n" + rf"$\langle A\rangle_\rho$ = {np.median(res['A_rho'][j]):.3f}",
-                transform=ax.transAxes, fontsize=9.5)
         ax.set_yscale("log")
-        ax.set_ylim(1e-6, 3 * h0.max())
-        ax.set_xlim(b[0], res["lrho_max"] + 1.2)
+        i0 = 0 if zoom is None else int(np.searchsorted(x, res["lrho_max"] - zoom))
+        ax.set_ylim(0.5 / K, 2 * max(c0[i0], 1))
+        ax.set_xlim(x[i0], x[-1])
         ax.set_title(_date_str(orbit, res["date_idx"][j], "%d %b"))
     flat[ncol - 1].legend(loc="upper right", fontsize=10)
-    fig.suptitle("Stream density distribution, before/after solar focusing (real Earth orbit)")
+    fig.suptitle("Cumulative stream density distribution, before/after solar focusing (real Earth orbit)")
     fig.savefig(fname, dpi=dpi)
     return fig
 
@@ -410,16 +422,20 @@ def plot_year(res, orbit, fname="plots/density_vs_date.png", marks=None, dpi=300
     dates = orbit["dates"][d]
     fig, (a, b, c) = plt.subplots(3, 1, figsize=(8.5, 9), sharex=True, constrained_layout=True)
     _band_pct(a, dates, res["A_rho"], "C0")
-    a.set_ylabel(r"$\langle A\rangle_\rho = \sum\rho_n A_n / \sum \rho_n$")
+    a.set_ylabel(r"$\langle A\rangle_\rho$")
     _band_pct(b, dates, np.maximum(res["rho_max_loc"] / res["rho1"] - 1, 1e-8), "C1")
     b.set_yscale("log")
-    b.set_ylabel(r"$\max_n\,\rho_n A_n\,/\,\rho_{1} - 1$")
+    b.set_ylabel(r"$\rho^{\rm local}_{\max}/\rho_1 - 1$")
+    K = res["n_repeats"]
+    nf = len(res["factors"])
     for fi, f in enumerate(res["factors"]):
-        c.plot(dates, (res["n_exceed"][:, :, fi] >= 1).mean(1), lw=1.6, color=plt.cm.plasma(0.15 + 0.7 * fi / max(len(res["factors"]) - 1, 1)),
-               label=rf"$f={f:g}$")
-    c.set_ylabel(r"$P(\geq 1$ stream $> f\,\rho_1)$")
-    c.set_ylim(-0.02, 1.02)
-    c.legend(title="threshold", ncol=2)
+        p = (res["n_exceed"][:, :, fi] >= 1).mean(1)
+        c.plot(dates, np.where(p > 0, p, np.nan), lw=1.6, color=plt.cm.plasma(0.1 + 0.75 * fi / max(nf - 1, 1)),
+               label=rf"${f:g}\,\rho_1 = {_sci(f * res['rho1'], 1)}\,\rho_{{DM}}$")
+    c.set_yscale("log")
+    c.set_ylim(0.5 / K, 1.3)
+    c.set_ylabel(r"$P(\rho^{\rm local}_{\max} > \rho_{\rm thr})$")
+    c.legend(title=r"threshold $\rho_{\rm thr}$", fontsize=8.5, ncol=2, loc="upper left")
     for ax in (a, b, c):
         if marks is not None:
             for m in marks:
@@ -436,10 +452,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--orbit", default=None, help="file from export_earth_orbit.py (.mat/.csv/.npz)")
     ap.add_argument("--astropy", action="store_true", help="use astropy's built-in ephemeris instead")
-    ap.add_argument("--t0", default="2013-06-22 00:00:00", help="start time for --astropy")
+    ap.add_argument("--t0", default="2013-03-5 00:00:00", help="start time for --astropy")
     ap.add_argument("--use", default="lab", choices=["lab", "earth"])
     ap.add_argument("--nstreams", type=int, default=10000)
-    ap.add_argument("--repeats", type=int, default=10000)
+    ap.add_argument("--repeats", type=int, default=25000)
     ap.add_argument("--scan-step", type=float, default=15.0, help="days between dates in the year scan")
     ap.add_argument("--epochs", default=None, help="comma-separated ISO dates for the 6-panel figure")
     ap.add_argument("--wind-vector", type=float, nargs=3, default=None,
@@ -472,7 +488,7 @@ def main():
     yidx = np.unique(np.clip(np.searchsorted(orbit["t_days"], targets), 0, n_year - 1))
     print(f"\nyear scan: {len(yidx)} dates x {args.repeats} draws x {args.nstreams} streams")
     t0 = time.time()
-    yres = scan(orbit, yidx, w_mean, args.nstreams, args.repeats, args.sigma, do_hist=False)
+    yres = scan(orbit, yidx, w_mean, args.nstreams, args.repeats, args.sigma, do_cum=False)
     print(f"  done in {time.time() - t0:.1f} s")
     peak_report(yres, orbit)
 
@@ -482,12 +498,12 @@ def main():
     else:
         eidx = [int(np.abs(orbit["t_days"] - 365.25 * k / 6).argmin()) for k in range(6)]
     print("\nepochs:", [_date_str(orbit, i, "%Y-%m-%d") for i in eidx])
-    eres = scan(orbit, eidx, w_mean, args.nstreams, args.repeats, args.sigma, do_hist=True)
+    eres = scan(orbit, eidx, w_mean, args.nstreams, args.repeats, args.sigma, do_cum=True)
 
     out = lambda s: os.path.join(args.out_dir, s)
     plot_initial_distribution(args.nstreams, out("initial_stream_distribution.png"), args.dpi)
     plot_wind_geometry(orbit, w_mean, args.sigma, out("wind_geometry.png"), args.dpi)
-    plot_logrho_epochs(eres, orbit, out("logrho_pdf_epochs.png"), args.dpi)
+    plot_cumulative_epochs(eres, orbit, out("cumulative_epochs.png"), args.dpi)
     plot_year(yres, orbit, out("density_vs_date.png"), marks=eidx, dpi=args.dpi)
     print("saved figures to", args.out_dir)
 
