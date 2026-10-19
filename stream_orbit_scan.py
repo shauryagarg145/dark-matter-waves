@@ -150,7 +150,7 @@ def enhancement_branches(w, rhat, phi):
 
 
 # ------------------------------------------------------------ Monte Carlo ---
-def scan(orbit, date_idx, w_mean, n_streams=10_000, n_repeats=100, sigma=SIGMA,
+def scan(orbit, date_idx, w_mean, n_streams=100_000, n_repeats=1000, sigma=SIGMA,
          branch="both", do_hist=True, n_bins_rho=40, seed=0, verbose=True,
          factors=(1.1, 1.5, 2.0, 5.0)):
     """
@@ -277,7 +277,7 @@ def _sci(x, d=1):
 
 
 def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_distribution.png", dpi=300,
-                              overlay_helper=True):
+                              overlay_helper=False):
     """
     Left : cumulative number of streams N(>rho) over the full range (~1e14 streams), with the cut at
            N_str = n_streams: streams above the cut are modelled individually, the rest is the smooth halo.
@@ -314,13 +314,13 @@ def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_dist
     a.text(rho_cut * 1.6, 3, rf"modelled individually" "\n" rf"($\rho>{_sci(rho_cut)}\,\rho_{{DM}}$)",
            fontsize=10, color="C0")
     a.text(rho[0] * 2.5, 3, "smooth background", fontsize=10, color="0.35")
-    a.legend(loc="upper right", fontsize=9)
+    #a.legend(loc="upper right", fontsize=9)
     b.plot(rho, F, color="C3", lw=2)
     b.set_ylim(0, 1.02)
     b.set_ylabel(r"fraction of $\rho_{DM}$ in streams $>\rho$")
-    b.annotate(rf"top $N_{{\rm str}}$ streams: {100 * f_top:.0f}% of $\rho_{{DM}}$", (rho_cut, f_top),
-               (rho[0] * 30, 0.8), arrowprops=dict(arrowstyle="->"), fontsize=11)
-    b.text(rho[0] * 30, 0.62, rf"rest ({100 * (1 - f_top):.0f}%) $\to$ smooth SHM", fontsize=11)
+    #b.annotate(rf"top $N_{{\rm str}}$ streams: {100 * f_top:.0f}% of $\rho_{{DM}}$", (rho_cut, f_top),
+               #(rho[0] * 30, 0.8), arrowprops=dict(arrowstyle="->"), fontsize=11)
+    #b.text(rho[0] * 30, 0.62, rf"rest ({100 * (1 - f_top):.0f}%) $\to$ smooth SHM", fontsize=11)
     print(f"  N_str = {n_streams:.0e}: rho_cut = {rho_cut:.3e} rho_DM, top streams hold {100 * f_top:.1f}% of rho_DM")
     fig.savefig(fname, dpi=dpi)
     return fig
@@ -438,8 +438,8 @@ def main():
     ap.add_argument("--astropy", action="store_true", help="use astropy's built-in ephemeris instead")
     ap.add_argument("--t0", default="2013-06-22 00:00:00", help="start time for --astropy")
     ap.add_argument("--use", default="lab", choices=["lab", "earth"])
-    ap.add_argument("--nstreams", type=int, default=100000)
-    ap.add_argument("--repeats", type=int, default=100)
+    ap.add_argument("--nstreams", type=int, default=10000)
+    ap.add_argument("--repeats", type=int, default=10000)
     ap.add_argument("--scan-step", type=float, default=15.0, help="days between dates in the year scan")
     ap.add_argument("--epochs", default=None, help="comma-separated ISO dates for the 6-panel figure")
     ap.add_argument("--wind-vector", type=float, nargs=3, default=None,
