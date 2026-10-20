@@ -368,7 +368,7 @@ def plot_wind_geometry(orbit, w_mean, sigma=SIGMA, fname="plots/wind_geometry.pn
     return fig
 
 
-def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=300, zoom=1.5):
+def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=300, nstreams=10000, zoom=0.7):
     """
     One panel per date: cumulative number of streams denser than rho, N(>rho), before (black) and
     after (coloured: mean, +-1 sigma, +-2 sigma over velocity draws) solar focusing.  Where N < 1 the
@@ -379,7 +379,7 @@ def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=
     J = len(res["date_idx"])
     ncol = 3 if J > 4 else 2
     nrow = int(np.ceil(J / ncol))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(4.8 * ncol, 3.8 * nrow), sharex=True, sharey=True,
+    fig, axs = plt.subplots(nrow, ncol, figsize=(4.0 * ncol, 3.8 * nrow), sharex=True, sharey=True,
                             constrained_layout=True)
     axs = np.atleast_2d(axs)
     for ax in axs.ravel()[J:]:
@@ -387,7 +387,7 @@ def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=
     for ax in axs[-1]:
         ax.set_xlabel(r"$\log_{10}(\rho / \rho_{DM})$")
     for ax in axs[:, 0]:
-        ax.set_ylabel(r"$N(>\rho)$")
+        ax.set_ylabel(r"$P(>\rho)$")
     x = res["lgrid"]
     c0 = res["cum_old"].astype(float)
     K = res["n_repeats"]
@@ -395,17 +395,17 @@ def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=
     for j, ax in enumerate(flat):
         col = _c(j, J)
         c = res["cum_new"][j].astype(float)
-        _band_std(ax, x, c.mean(0), c.std(0, ddof=1) if K > 1 else 0 * x, col, floor=1e-12)
+        _band_std(ax, x, c.mean(0) / nstreams, c.std(0, ddof=1) / nstreams if K > 1 else 0 * x, col, floor=1e-12)
         ax.plot([], [], color=col, lw=1.6, label=r"with focusing (mean, $\pm1\sigma,\pm2\sigma$)")
-        ax.plot(x, np.where(c0 > 0, c0, np.nan), "k", lw=1.2, label="original", zorder=5)
+        ax.plot(x, np.where(c0 > 0, c0, np.nan) / nstreams, "k", marker="+", lw=1.2, label="original", zorder=5)
         ax.axvline(res["lrho_max"], color="k", ls=":", lw=1.2, label="end of original distribution", zorder=4)
         ax.set_yscale("log")
         i0 = 0 if zoom is None else int(np.searchsorted(x, res["lrho_max"] - zoom))
-        ax.set_ylim(0.5 / K, 2 * max(c0[i0], 1))
+        ax.set_ylim(1 / K / nstreams, 1.5 * c0[i0] / nstreams)
         ax.set_xlim(x[i0], x[-1])
         ax.set_title(_date_str(orbit, res["date_idx"][j], "%d %b"))
     flat[ncol - 1].legend(loc="upper right", fontsize=10)
-    fig.suptitle("Cumulative stream density distribution, before/after solar focusing (real Earth orbit)")
+    #fig.suptitle("Cumulative stream density distribution, before/after solar focusing (real Earth orbit)")
     fig.savefig(fname, dpi=dpi)
     return fig
 
@@ -455,7 +455,7 @@ def main():
     ap.add_argument("--t0", default="2013-03-5 00:00:00", help="start time for --astropy")
     ap.add_argument("--use", default="lab", choices=["lab", "earth"])
     ap.add_argument("--nstreams", type=int, default=10000)
-    ap.add_argument("--repeats", type=int, default=25000)
+    ap.add_argument("--repeats", type=int, default=5000)
     ap.add_argument("--scan-step", type=float, default=15.0, help="days between dates in the year scan")
     ap.add_argument("--epochs", default=None, help="comma-separated ISO dates for the 6-panel figure")
     ap.add_argument("--wind-vector", type=float, nargs=3, default=None,
@@ -503,7 +503,7 @@ def main():
     out = lambda s: os.path.join(args.out_dir, s)
     plot_initial_distribution(args.nstreams, out("initial_stream_distribution.png"), args.dpi)
     plot_wind_geometry(orbit, w_mean, args.sigma, out("wind_geometry.png"), args.dpi)
-    plot_cumulative_epochs(eres, orbit, out("cumulative_epochs.png"), args.dpi)
+    plot_cumulative_epochs(eres, orbit, out("cumulative_epochs.png"), args.dpi, args.nstreams)
     plot_year(yres, orbit, out("density_vs_date.png"), marks=eidx, dpi=args.dpi)
     print("saved figures to", args.out_dir)
 
