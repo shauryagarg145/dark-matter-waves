@@ -161,7 +161,7 @@ def _cum_hist(log10_vals, edges):
 
 def scan(orbit, date_idx, w_mean, n_streams=10_000, n_repeats=100, sigma=SIGMA,
          branch="both", do_cum=True, bin_width=0.05, seed=0, verbose=True,
-         factors=(1.05, 1.25, 1.5, 2.0, 4.0)):
+         factors=(1.05, 1.25, 2.5, 5.0)):
     """
     For every repeat draw fresh stream velocities, then evaluate the enhancement at each orbit
     sample in `date_idx` (same draws for all dates -> differences between dates are purely
@@ -420,29 +420,29 @@ def plot_year(res, orbit, fname="plots/density_vs_date.png", marks=None, dpi=300
     """
     d = res["date_idx"]
     dates = orbit["dates"][d]
-    fig, (a, b, c) = plt.subplots(3, 1, figsize=(8.5, 9), sharex=True, constrained_layout=True)
+    fig, (a, b, c) = plt.subplots(3, 1, figsize=(8.3, 9), sharex=True, constrained_layout=True)
     _band_pct(a, dates, res["A_rho"], "C0")
     a.set_ylabel(r"$\langle A\rangle_\rho$")
     _band_pct(b, dates, np.maximum(res["rho_max_loc"] / res["rho1"] - 1, 1e-8), "C1")
     b.set_yscale("log")
-    b.set_ylabel(r"$\rho^{\rm local}_{\max}/\rho_1 - 1$")
+    b.set_ylabel(r"$\rho_{\rm local}^{\max}/\rho_\infty^\max - 1$")
     K = res["n_repeats"]
     nf = len(res["factors"])
     for fi, f in enumerate(res["factors"]):
         p = (res["n_exceed"][:, :, fi] >= 1).mean(1)
         c.plot(dates, np.where(p > 0, p, np.nan), lw=1.6, color=plt.cm.plasma(0.1 + 0.75 * fi / max(nf - 1, 1)),
-               label=rf"${f:g}\,\rho_1 = {_sci(f * res['rho1'], 1)}\,\rho_{{DM}}$")
+               label=rf"${f:g}\,\rho_\infty^\max = {_sci(f * res['rho1'], 1)}\,\rho_{{DM}}$")
     c.set_yscale("log")
     c.set_ylim(0.5 / K, 1.3)
-    c.set_ylabel(r"$P(\rho^{\rm local}_{\max} > \rho_{\rm thr})$")
-    c.legend(title=r"threshold $\rho_{\rm thr}$", fontsize=8.5, ncol=2, loc="upper left")
+    c.set_ylabel(r"$P(\rho_{\rm local}^{\max} > \rho_{\rm thr})$")
+    c.legend(title=r"threshold $\rho_{\rm thr}$", fontsize=8.5, ncol=2)
     for ax in (a, b, c):
         if marks is not None:
             for m in marks:
                 ax.axvline(orbit["dates"][m], color="gray", ls=":", lw=1)
     c.xaxis.set_major_locator(mdates.MonthLocator())
     c.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
-    fig.suptitle(f"{res['n_streams']:,} streams, {res['n_repeats']} velocity draws")
+    #fig.suptitle(f"{res['n_streams']:,} streams, {res['n_repeats']} velocity draws")
     fig.savefig(fname, dpi=dpi)
     return fig
 
@@ -455,7 +455,7 @@ def main():
     ap.add_argument("--t0", default="2013-03-5 00:00:00", help="start time for --astropy")
     ap.add_argument("--use", default="lab", choices=["lab", "earth"])
     ap.add_argument("--nstreams", type=int, default=10000)
-    ap.add_argument("--repeats", type=int, default=5000)
+    ap.add_argument("--repeats", type=int, default=50_000)
     ap.add_argument("--scan-step", type=float, default=15.0, help="days between dates in the year scan")
     ap.add_argument("--epochs", default=None, help="comma-separated ISO dates for the 6-panel figure")
     ap.add_argument("--wind-vector", type=float, nargs=3, default=None,
