@@ -401,7 +401,7 @@ def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=
         ax.axvline(res["lrho_max"], color="k", ls=":", lw=1.2, label="end of original distribution", zorder=4)
         ax.set_yscale("log")
         i0 = 0 if zoom is None else int(np.searchsorted(x, res["lrho_max"] - zoom))
-        ax.set_ylim(1 / K / nstreams, 1.5 * c0[i0] / nstreams)
+        ax.set_ylim(25 / K / nstreams, 1.5 * c0[i0] / nstreams)
         ax.set_xlim(x[i0], x[-1])
         ax.set_title(_date_str(orbit, res["date_idx"][j], "%d %b"))
     flat[ncol - 1].legend(loc="upper right", fontsize=10)

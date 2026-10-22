@@ -59,16 +59,16 @@ def import_vel_conversions(modules_dir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--t0", default="2013-06-22 00:00:00",
+    ap.add_argument("--t0", default="2013-03-05 00:00:00",
                     help="start time (UTC). Default = your notebook's t0")
     ap.add_argument("--days", type=float, default=366.0, help="span to tabulate [days]")
-    ap.add_argument("--dt", type=float, default=60.0, help="time step [s]")
+    ap.add_argument("--dt", type=float, default=5.0, help="time step [s]")
     ap.add_argument("--lat", type=float, default=51.4779)
     ap.add_argument("--lon", type=float, default=-0.0015)
     ap.add_argument("--height", type=float, default=45.0, help="[m]")
     ap.add_argument("--modules-dir", default=None,
                     help="folder containing vel_conversions.py (default: next to this script / cwd)")
-    ap.add_argument("--chunk", type=int, default=100000,
+    ap.add_argument("--chunk", type=int, default=500000,
                     help="samples per call to sun_to_lab_position (limits memory)")
     ap.add_argument("--out", default="earth_orbit.mat")
     args = ap.parse_args()
