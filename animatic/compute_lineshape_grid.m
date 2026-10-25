@@ -107,8 +107,8 @@ for p = 1:nP
     for s = 1:nS
         [V, info] = lineshape_window(orb(s), t_start(p), window_hours, edges(p,:), opts);
         mass(p,s,:)      = V(:);                      % mass per bin; sum(V) = mean(w1+w2)
-        rho(p,s)         = mean(info.w1 + info.w2);
-        theta_lab(p,s)   = mean(info.theta);
+        rho(p,s)         = info.rho; % mean(info.w1 + info.w2);
+        theta_lab(p,s)   = 1; % mean(info.theta);
     end
     fprintf('panel %d/%d  theta=%3d deg  day %8.3f   rho: %s = %.4g, %s = %.4g\n', ...
             p, nP, angles_deg(p), t_cross(p), sites(1).tag, rho(p,1), sites(2).tag, rho(p,2));

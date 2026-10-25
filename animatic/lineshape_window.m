@@ -1,147 +1,78 @@
 function [vals, info] = lineshape_window(orb, t_start_days, window_hours, edges, opts)
-%LINESHAPE_WINDOW  Time-integrated speed lineshape over one window.
-%
-%   Port of the loop in cells 25-29 of annual.ipynb (the "for day in
-%   np.linspace(0,1,400)" block), vectorised so that no Python-style loops
-%   over the azimuth samples are needed.
-%
-%   [vals, info] = lineshape_window(orb, t_start_days, window_hours, edges, opts)
-%
-%   orb            struct from export_earth_orbit.py  (load('earth_orbit.mat'))
-%                  needs: t_days (Nx1), r_lab (Nx3, km), v_lab (Nx3, km/s)
-%   t_start_days   start of the window, in days since the table's t0
-%   window_hours   length of the window to integrate over (e.g. 6..24)
-%   edges          speed-bin edges [km/s] (fixed across frames for an animation)
-%
-%   opts (all optional):
-%     .u          stream speed at infinity            [220 km/s]   (notebook 'spd')
-%     .nT         time samples inside the window      [400]
-%     .nAz        azimuth samples per time sample     [4000]
-%     .az_mode    'valid'    (default) put all nAz samples on the part of the
-%                            azimuth range where the geometry is real, [0, az_max].
-%                            Same distribution as the notebook in the limit
-%                            nAz -> inf, but no samples are wasted (near opposition
-%                            the valid arc can be ~0.01 rad wide out of pi/2).
-%                 'notebook' uses linspace(0,pi/2,nAz) and drops invalid points,
-%                            sample-for-sample identical to the notebook.
-%     .uhat       1x3 unit vector: stream direction at infinity.
-%                 default = r_lab(1,:)/|r_lab(1,:)|  (= notebook vel_str/spd,
-%                 i.e. direction of the lab position at t0)
-%     .normal     1x3 rotation axis used for the azimuth sweep.
-%                 default = cross(r(t0+2d), r(t0+52d)) normalised (notebook cell 17)
-%     .average    true (default): divide by nT so frames are comparable.
-%                 false: plain sum, exactly like the notebook's `vals`.
-%
-%   vals   (numel(edges)-1) x 1   lineshape in each speed bin
-%   info   struct with per-sample diagnostics (ang1, ang2, theta, dist, ...)
-
 if nargin < 5, opts = struct(); end
-u    = get_opt(opts, 'u',   220);
-nT   = get_opt(opts, 'nT',  400);
-nAz  = get_opt(opts, 'nAz', 4000);
-mode = get_opt(opts, 'az_mode', 'valid');
-avg  = get_opt(opts, 'average', true);
+u     = get_opt(opts,'u',220);
+n0    = get_opt(opts,'nT0',720);        % initial uniform samples
+tolv  = get_opt(opts,'tol_speed',0.5);  % max speed change per step, in bin widths
+tolw  = get_opt(opts,'tol_logw',0.2);   % max |dlog w| per step
+maxN  = get_opt(opts,'maxN',2e6);
+GM    = 1.32712440018e11;
+uhat  = get_opt(opts,'uhat',[]);
+if isempty(uhat), uhat = orb.r_lab(1,:)/norm(orb.r_lab(1,:)); end
 
-GM = 1.32712440018e11;                 % Sun, km^3/s^2  (= G*M_sun in astropy)
+nb = numel(edges)-1;  e1 = edges(1);  de = (edges(end)-edges(1))/nb;
+T  = window_hours/24;
+t  = t_start_days + linspace(0,T,n0).';
+[s,w] = branch_samples(t);
 
-% ---- reference directions (fixed for the whole animation) -----------------
-uhat = get_opt(opts, 'uhat', []);
-if isempty(uhat)
-    uhat = orb.r_lab(1,:) / norm(orb.r_lab(1,:));
+while numel(t) < maxN
+    ds  = max(abs(diff(s)),[],2);
+    dlw = max(abs(diff(log(w))),[],2);
+    lo  = min(min(s(1:end-1,:),s(2:end,:)),[],2);      % skip intervals far outside the bins
+    hi  = max(max(s(1:end-1,:),s(2:end,:)),[],2);
+    rel = hi >= e1 & lo <= e1 + nb*de;
+    bad = rel & (ds > tolv*de | dlw > tolw);
+    if ~any(bad), break; end
+    tm = 0.5*(t(1:end-1)+t(2:end));
+    tn = tm(bad);
+    [sn,wn] = branch_samples(tn);
+    [t,ix] = sort([t; tn]);
+    s = [s; sn];  s = s(ix,:);
+    w = [w; wn];  w = w(ix,:);
 end
-nrm = get_opt(opts, 'normal', []);
-if isempty(nrm)
-    ra = interp_orbit(orb.t_days, orb.r_lab, 2);
-    rb = interp_orbit(orb.t_days, orb.r_lab, 52);
-    nrm = cross3(ra, rb);
-end
-nrm = nrm / norm(nrm);
 
-% ---- sample the orbit inside the window ------------------------------------
-tq   = t_start_days + linspace(0, window_hours/24, nT).';   % days
-r    = interp_orbit(orb.t_days, orb.r_lab, tq);              % nT x 3   [km]
-vlab = interp_orbit(orb.t_days, orb.v_lab, tq);              % nT x 3   [km/s]
-dist = sqrt(sum(r.^2, 2));
-rhat = r ./ dist;
-
-theta = acos(max(-1, min(1, rhat * uhat.')));   % angle(stream dir, r)   (notebook 'theta')
-Phi   = GM ./ dist;                             % potential, km^2/s^2    (notebook '-grav(dist)')
-vloc  = sqrt(u^2 + 2*Phi);                      % local speed            (notebook 'spd_loc')
-psi0  = acos(u ./ vloc);                        % boundary between the two branches
-
-% ---- the two solutions (notebook: minimize(func,...) -> ang1, ang2) --------
-ang1 = solve_psi(u, Phi, theta,      psi0,          pi*ones(nT,1));
-ang2 = solve_psi(u, Phi, pi - theta, zeros(nT,1),   psi0);
-
-% density factors 1/|dv_inf/dv|
-w1 = 1 ./ jac(u, Phi, ang1);
-w2 = 1 ./ jac(u, Phi, ang2);
-
-% ---- azimuth sweep + histogram ---------------------------------------------
-az0   = linspace(0, pi/2, nAz).';          % notebook's grid
-nb    = numel(edges) - 1;
-e1    = edges(1);  de = (edges(end) - edges(1)) / nb;   % uniform edges assumed
-vals  = zeros(nb, 1);
-
-for j = 1:nT
-    rh = rhat(j,:);
-    for branch = 1:2
-        if branch == 1, ang = ang1(j); w = w1(j); else, ang = ang2(j); w = w2(j); end
-
-        if strcmp(mode, 'notebook')
-            a     = az0;
-            ratio = cos(ang) ./ cos(a);          % notebook: cos(ang)/cos(azimuth)
-            ok    = abs(ratio) <= 1;             % numpy gave NaN here; MATLAB would go complex
-            a     = a(ok);  ratio = ratio(ok);
-        else
-            azmax = acos(min(1, abs(cos(ang))));         % largest az with |ratio| <= 1
-            a     = linspace(0, azmax, nAz).';
-            ratio = max(-1, min(1, cos(ang) ./ cos(a))); % clip rounding at the end point
-        end
-        nok = numel(a);
-        if nok == 0, continue; end
-        p  = pi/2 - asin(ratio);                 % 'polar'
-        ca = cos(a);  sa = sin(a);
-
-        % step 1 (notebook rotationr): rotate rhat about (normal x rhat) by p
-        %         -> n1 = rhat*cos p - aperp*sin p
-        aperp = nrm - rh * (nrm*rh.');           % part of normal perpendicular to rhat
-        aperp = aperp / norm(aperp);
-        n1x = rh(1)*cos(p) - aperp(1)*sin(p);
-        n1y = rh(2)*cos(p) - aperp(2)*sin(p);
-        n1z = rh(3)*cos(p) - aperp(3)*sin(p);
-
-        % step 2 (notebook rotationn): rotate n1 about normal by az (Rodrigues)
-        dotn = nrm(1)*n1x + nrm(2)*n1y + nrm(3)*n1z;
-        cx = nrm(2)*n1z - nrm(3)*n1y;
-        cy = nrm(3)*n1x - nrm(1)*n1z;
-        cz = nrm(1)*n1y - nrm(2)*n1x;
-        nx = n1x.*ca + cx.*sa + nrm(1)*dotn.*(1-ca);
-        ny = n1y.*ca + cy.*sa + nrm(2)*dotn.*(1-ca);
-        nz = n1z.*ca + cz.*sa + nrm(3)*dotn.*(1-ca);
-
-        % speed relative to the lab
-        sx = vloc(j)*nx - vlab(j,1);
-        sy = vloc(j)*ny - vlab(j,2);
-        sz = vloc(j)*nz - vlab(j,3);
-        spd = sqrt(sx.^2 + sy.^2 + sz.^2);
-
-        idx = floor((spd - e1)/de) + 1;
-        in  = idx >= 1 & idx <= nb;
-        if any(in)
-            vals = vals + accumarray(idx(in), w/nok, [nb 1]);
-        end
+% ---- deposit each interval uniformly over the speed bins it spans ----------
+vals = zeros(nb,1);
+dtf  = diff(t)/T;
+for b = 1:2
+    sa = s(1:end-1,b);  sb = s(2:end,b);
+    m  = 0.5*(w(1:end-1,b)+w(2:end,b)).*dtf;
+    lo = min(sa,sb);  hi = max(sa,sb);
+    i0 = floor((lo-e1)/de)+1;  i1 = floor((hi-e1)/de)+1;
+    same = (i0==i1);
+    ok = same & i0>=1 & i0<=nb;
+    vals = vals + accumarray(i0(ok), m(ok), [nb 1]);
+    for k = find(~same & i1>=1 & i0<=nb).'
+        bins = max(i0(k),1):min(i1(k),nb);
+        L = min(e1+bins*de,hi(k)) - max(e1+(bins-1)*de,lo(k));
+        vals(bins) = vals(bins) + m(k)*L(:)/(hi(k)-lo(k));
     end
 end
 
-if avg, vals = vals / nT; end
-
 if nargout > 1
-    info = struct('t_days', tq, 'dist_km', dist, 'theta', theta, 'ang1', ang1, ...
-                  'ang2', ang2, 'w1', w1, 'w2', w2, 'vloc', vloc, ...
-                  'vlab_speed', sqrt(sum(vlab.^2,2)), 'normal', nrm, 'uhat', uhat);
+    info.rho = trapz(t, w(:,1)+w(:,2))/T;     % time-averaged enhancement
+    info.t_days = t;  info.nsamples = numel(t);
 end
+
+    function [s,w] = branch_samples(tq)
+        r  = interp_orbit(orb.t_days, orb.r_lab, tq);
+        vl = interp_orbit(orb.t_days, orb.v_lab, tq);
+        d  = sqrt(sum(r.^2,2));  rh = r./d;
+        th = max(acos(max(-1,min(1,rh*uhat.'))), 1e-12);
+        Phi = GM./d;  vloc = sqrt(u^2+2*Phi);  psi0 = acos(u./vloc);
+        ang = [solve_psi(u,Phi,th,     psi0,         pi*ones(size(th))), ...
+               solve_psi(u,Phi,pi-th,  zeros(size(th)), psi0)];
+        ep  = uhat - (rh*uhat.').*rh;
+        ep  = ep./max(sqrt(sum(ep.^2,2)),1e-15);
+        s = zeros(numel(tq),2);  w = s;
+        for b = 1:2
+            sg = sign(u - vloc.*cos(ang(:,b)));
+            n  = cos(ang(:,b)).*rh + (sin(ang(:,b)).*sg).*ep;
+            s(:,b) = sqrt(sum((vloc.*n - vl).^2,2));
+            w(:,b) = 1./jac(u,Phi,ang(:,b));
+        end
+    end
 end
+% (keep get_opt, interp_orbit, jac, theta_inf, solve_psi below)
 
 % =============================== helpers =====================================
 
