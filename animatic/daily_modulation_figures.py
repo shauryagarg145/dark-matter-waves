@@ -42,12 +42,12 @@ from scipy.io import loadmat
 
 # ----------------------------- style (same as plot_lineshape_grid.py) --------
 STYLE = {
-    "font.family": ["EB Garamond", "serif"],
+    "font.family": ["Garamond", "serif"],
     "mathtext.fontset": "cm",
-    "font.size": 12,
-    "axes.labelsize": 17,
-    "axes.titlesize": 17,
-    "legend.fontsize": 14,
+    "font.size": 14,
+    "axes.labelsize": 19,
+    "axes.titlesize": 19,
+    "legend.fontsize": 16,
     "xtick.direction": "in",
     "ytick.direction": "in",
     "xtick.top": True,
@@ -217,19 +217,19 @@ def build(args):
             ax.set_xlabel("UT on 5 March  [h]")
         ax.text(0.03, 0.96, f"({which})", transform=ax.transAxes, va="top", ha="left", fontsize=15)
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
     for ax, which in zip(axes, "abc"):
         draw(ax, which)
     fig.tight_layout()
-    fig.savefig(args.out + ".pdf")
-    fig.savefig(args.out + ".png", dpi=args.dpi)
+    fig.savefig(args.out + ".pdf", bbox_inches='tight')
+    fig.savefig(args.out + ".png", dpi=args.dpi, bbox_inches='tight')
     if args.split:
         for which in "abc":
             f1, a1 = plt.subplots(figsize=(5.6, 4.8))
             draw(a1, which)
             f1.tight_layout()
-            f1.savefig(f"{args.out}_{which}.pdf")
-            f1.savefig(f"{args.out}_{which}.png", dpi=args.dpi)
+            f1.savefig(f"{args.out}_{which}.pdf", bbox_inches='tight')
+            f1.savefig(f"{args.out}_{which}.png", dpi=args.dpi, bbox_inches='tight')
             plt.close(f1)
 
     # ---- numbers quoted in the text ------------------------------------------
@@ -253,7 +253,7 @@ def build(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default=".")
+    ap.add_argument("--data-dir", default="data/")
     ap.add_argument("--out", default="plots/daily_modulation")
     ap.add_argument("--split", action="store_true", help="also save panels (a), (b), (c) separately")
     ap.add_argument("--make-tables", action="store_true", help="run export_earth_orbit.py for any missing table")
