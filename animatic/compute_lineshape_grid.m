@@ -17,17 +17,17 @@
 %   lineshape_window.m
 %   orbit_equator.mat, orbit_southpole.mat   (from export_earth_orbit.py, see below)
 %
-%   python export_earth_orbit.py --lat   0 --lon 0 --height 0 --days 368 --out orbit_equator.mat
-%   python export_earth_orbit.py --lat -90 --lon 0 --height 0 --days 368 --out orbit_southpole.mat
+%   python export_earth_orbit.py --lat   0 --lon 0 --height 0 --days 368 --out /data/orbit_equator.mat
+%   python export_earth_orbit.py --lat -90 --lon 0 --height 0 --days 368 --out /data/orbit_southpole.mat
 %
 % (--days 368 so that the 360-degree panel, ~day 365.26, plus its window fits.)
 
 clear; close all; clc;
 
 %% ------------------------------ settings ------------------------------------
-sites(1).file = 'orbit_equator.mat';    sites(1).label = 'Equator';
+sites(1).file = 'data/orbit_equator.mat';    sites(1).label = 'Equator';
 sites(1).color = [0.85 0.33 0.10];      sites(1).tag = 'eq';
-sites(2).file = 'orbit_southpole.mat';  sites(2).label = 'South Pole';
+sites(2).file = 'data/orbit_southpole.mat';  sites(2).label = 'South Pole';
 sites(2).color = [0.00 0.45 0.74];      sites(2).tag = 'SP';
 
 angles_deg   = 0:45:360;     % stream/Earth angle for each of the 9 panels
@@ -44,7 +44,7 @@ nT           = 4320;          % time samples per window
 nAz          = 4000;         % azimuth samples per time sample
 nbins        = 800;          % speed bins per panel (the speed range is zoomed per panel)
 support_thresh = 1e-3;       % zoom range = where f > this x peak (either site)
-export_file  = 'lineshape_grid_export.mat';
+export_file  = 'data/lineshape_grid_export.mat';
 
 %% ------------------------------ load orbits ---------------------------------
 nS = numel(sites);

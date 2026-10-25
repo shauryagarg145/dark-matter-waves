@@ -36,12 +36,12 @@ COLORS = ["#d62728", "#1f77b4"]          # site 1 (equator), site 2 (south pole)
 ALPHA_FILL = 0.20                         # low alpha so overlaps stay visible
 LW = 1.2
 STYLE = {
-    "font.family": "Garamond",
+    "font.family": "EB Garamond",
     "mathtext.fontset": "cm",
-    "font.size": 10,
-    "axes.labelsize": 15,
-    "axes.titlesize": 15,
-    "legend.fontsize": 12,
+    "font.size": 14,
+    "axes.labelsize": 18,
+    "axes.titlesize": 18,
+    "legend.fontsize": 14,
     "xtick.direction": "in",
     "ytick.direction": "in",
     "xtick.top": True,
@@ -104,8 +104,8 @@ def draw(ax, xe, fs, colors, base, labels=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="lineshape_grid_export.mat")
-    ap.add_argument("--out", default="lineshape_grid")
+    ap.add_argument("--data", default="data/lineshape_grid_export.mat")
+    ap.add_argument("--out", default="plots/lineshape_grid")
     ap.add_argument("--xlim", nargs=2, type=float, default=None,
                     help="shared x-limits in units of 1e-6; default: union of all panels")
     ap.add_argument("--y-decades", type=float, default=6.0,
@@ -156,7 +156,7 @@ def main():
         inset_panels = [int(k) - 1 for k in args.insets.split(",")]
 
     # ---- figure -------------------------------------------------------------
-    fig, axes = plt.subplots(3, 3, figsize=(11, 9), sharex=True, sharey=True)
+    fig, axes = plt.subplots(3, 3, figsize=(11, 10), sharex=True, sharey=True)
     for p, ax in enumerate(axes.flat):
         xe, fs = dens[p]
         draw(ax, xe, fs, COLORS, 0.0 if args.linear_y else ybot,
@@ -169,7 +169,7 @@ def main():
             ax.set_ylim(ybot, ytop)
 
         date, hhmm = pretty_date(d["t0"], d["t_start"][p])
-        ax.set_title(rf"$\theta = {d['angles'][p]:.0f}^\circ$  —  {date}")
+        ax.set_title(rf"$\theta_\infty = {d['angles'][p]:.0f}^\circ$  —  {date}")
         txt = "\n".join(rf"$\rho_{{\rm {args.tags[s]}}} = {d['rho'][p, s]:.3g}$" for s in range(nS))
         ax.text(0.03, 0.95, txt, transform=ax.transAxes, va="top", ha="left", fontsize=8,
                 bbox=dict(fc="white", ec="none", alpha=0.7, pad=1.5))

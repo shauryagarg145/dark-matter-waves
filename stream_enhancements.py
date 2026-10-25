@@ -29,7 +29,7 @@ SIGMA = 167.0                                  # km/s
 import matplotlib
 #from pyfonts import load_google_font
 
-font = {'family' : 'Garamond',
+font = {'family' : 'EB Garamond',
         'weight' : 'normal',
         'size'   : 22}
 #matplotlib.rcParams['font.serif'] = "Times New Roman"
