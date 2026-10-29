@@ -256,7 +256,7 @@ def _band_pct(ax, x, y, color, label=None):
 
 
 def _c(i, n):
-    return plt.cm.viridis(0.85 * i / max(n - 1, 1))
+    return plt.cm.managua(0.85 * i / max(n - 1, 1))
 
 
 def _fit_cumulative(rho_lo=1e-18, rho_hi=1.0, n=20001):
@@ -285,7 +285,7 @@ def _sci(x, d=1):
     return rf"{m:.{d}f}\times10^{{{e}}}"
 
 
-def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_distribution.png", dpi=300,
+def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_distribution.pdf", dpi=300,
                               overlay_helper=False):
     """
     Left : cumulative number of streams N(>rho) over the full range (~1e14 streams), with the cut at
@@ -318,7 +318,7 @@ def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_dist
     a.axhline(n_streams, color="k", ls="--", lw=1)
     a.set_ylim(0.3, 1e15)
     a.set_ylabel(r"streams denser than $\rho$,  $N(>\rho)$")
-    a.text(rho[0] * 2.5, 2.5e14, r"$\sim10^{14}$ streams", fontsize=11)
+    #a.text(rho[0] * 2.5, 2.5e14, r"$\sim10^{14}$ streams", fontsize=11)
     a.text(rho[0] * 2.5, n_streams * 1.6, rf"cut: $N_{{\rm str}}={_sci(n_streams, 0)}$", fontsize=11)
     a.text(rho_cut * 1.6, 3, rf"modelled individually" "\n" rf"($\rho>{_sci(rho_cut)}\,\rho_{{DM}}$)",
            fontsize=10, color="C0")
@@ -331,7 +331,7 @@ def plot_initial_distribution(n_streams=10_000, fname="plots/initial_stream_dist
                #(rho[0] * 30, 0.8), arrowprops=dict(arrowstyle="->"), fontsize=11)
     #b.text(rho[0] * 30, 0.62, rf"rest ({100 * (1 - f_top):.0f}%) $\to$ smooth SHM", fontsize=11)
     print(f"  N_str = {n_streams:.0e}: rho_cut = {rho_cut:.3e} rho_DM, top streams hold {100 * f_top:.1f}% of rho_DM")
-    fig.savefig(fname, dpi=dpi)
+    fig.savefig(fname, bbox_inches="tight")
     return fig
 
 
@@ -368,7 +368,7 @@ def plot_wind_geometry(orbit, w_mean, sigma=SIGMA, fname="plots/wind_geometry.pn
     return fig
 
 
-def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=300, nstreams=10000, zoom=0.7):
+def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.pdf", dpi=300, nstreams=10000, zoom=0.7):
     """
     One panel per date: cumulative number of streams denser than rho, N(>rho), before (black) and
     after (coloured: mean, +-1 sigma, +-2 sigma over velocity draws) solar focusing.  Where N < 1 the
@@ -406,11 +406,11 @@ def plot_cumulative_epochs(res, orbit, fname="plots/cumulative_epochs.png", dpi=
         ax.set_title(_date_str(orbit, res["date_idx"][j], "%d %b"))
     flat[ncol - 1].legend(loc="upper right", fontsize=10)
     #fig.suptitle("Cumulative stream density distribution, before/after solar focusing (real Earth orbit)")
-    fig.savefig(fname, dpi=dpi)
+    fig.savefig(fname)
     return fig
 
 
-def plot_year(res, orbit, fname="plots/density_vs_date.png", marks=None, dpi=300):
+def plot_year(res, orbit, fname="plots/density_vs_date.pdf", marks=None, dpi=300):
     """
     Annual evolution (median and 68%/95% bands over velocity draws):
       (a) density-weighted enhancement of the whole stream population  <A>_rho
@@ -430,7 +430,7 @@ def plot_year(res, orbit, fname="plots/density_vs_date.png", marks=None, dpi=300
     nf = len(res["factors"])
     for fi, f in enumerate(res["factors"]):
         p = (res["n_exceed"][:, :, fi] >= 1).mean(1)
-        c.plot(dates, np.where(p > 0, p, np.nan), lw=1.6, color=plt.cm.plasma(0.1 + 0.75 * fi / max(nf - 1, 1)),
+        c.plot(dates, np.where(p > 0, p, np.nan), lw=1.6, color=plt.cm.managua(0.1 + 0.75 * fi / max(nf - 1, 1)),
                label=rf"${f:g}\,\rho_\infty^\max = {_sci(f * res['rho1'], 1)}\,\rho_{{DM}}$")
     c.set_yscale("log")
     c.set_ylim(0.5 / K, 1.3)
@@ -443,7 +443,7 @@ def plot_year(res, orbit, fname="plots/density_vs_date.png", marks=None, dpi=300
     c.xaxis.set_major_locator(mdates.MonthLocator())
     c.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     #fig.suptitle(f"{res['n_streams']:,} streams, {res['n_repeats']} velocity draws")
-    fig.savefig(fname, dpi=dpi)
+    fig.savefig(fname)
     return fig
 
 
@@ -452,7 +452,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--orbit", default=None, help="file from export_earth_orbit.py (.mat/.csv/.npz)")
     ap.add_argument("--astropy", action="store_true", help="use astropy's built-in ephemeris instead")
-    ap.add_argument("--t0", default="2013-03-5 00:00:00", help="start time for --astropy")
+    ap.add_argument("--t0", default="2025-03-5 00:00:00", help="start time for --astropy")
     ap.add_argument("--use", default="lab", choices=["lab", "earth"])
     ap.add_argument("--nstreams", type=int, default=10000)
     ap.add_argument("--repeats", type=int, default=50_000)
@@ -501,10 +501,10 @@ def main():
     eres = scan(orbit, eidx, w_mean, args.nstreams, args.repeats, args.sigma, do_cum=True)
 
     out = lambda s: os.path.join(args.out_dir, s)
-    plot_initial_distribution(args.nstreams, out("initial_stream_distribution.png"), args.dpi)
-    plot_wind_geometry(orbit, w_mean, args.sigma, out("wind_geometry.png"), args.dpi)
-    plot_cumulative_epochs(eres, orbit, out("cumulative_epochs.png"), args.dpi, args.nstreams)
-    plot_year(yres, orbit, out("density_vs_date.png"), marks=eidx, dpi=args.dpi)
+    plot_initial_distribution(args.nstreams, out("initial_stream_distribution.pdf"), args.dpi)
+    plot_wind_geometry(orbit, w_mean, args.sigma, out("wind_geometry.pdf"), args.dpi)
+    plot_cumulative_epochs(eres, orbit, out("cumulative_epochs.pdf"), args.dpi, args.nstreams)
+    plot_year(yres, orbit, out("density_vs_date.pdf"), marks=eidx, dpi=args.dpi)
     print("saved figures to", args.out_dir)
 
 
